@@ -283,6 +283,16 @@ with tab1:
                 
                 nro_actual = get_siguiente_comprobante()
                 nro_comprobante = col3.text_input("N° Comprobante", value=f"0045-{nro_actual:08d}")
+                # --- AGREGAR DESDE ACÁ ---
+                st.write("---")
+                st.write("**Selección de Ítems (Desmarca los que NO quieras incluir):**")
+                
+                for i, item in enumerate(items_extraidos):
+                    col_chk, col_info = st.columns([1, 9])
+                    # Checkbox guardado en session_state con una key única
+                    col_chk.checkbox("Incluir", value=True, key=f"item_{i}")
+                    col_info.write(f"📅 {item['fecha']} | 📄 Rem: {item['remito']} | 📦 Cant: {item['cantidad']} | 📝 {item['descripcion']}")
+                # --- HASTA ACÁ ---
                 
                 st.write("---")
                 st.write("**Precios Unitarios:**")
@@ -298,44 +308,59 @@ with tab1:
                 submitted = st.form_submit_button("Confirmar Valores y Generar PDF", type="primary")
 
             if submitted:
-                # 1. Armamos la lista procesada con los totales
+                # 1. Armamos la lista procesada con los totales, filtrando los no seleccionados
                 total_general = 0
                 items_procesados = []
-                for item in items_extraidos:
-                    p_unit = precios_dict.get(item['descripcion'], 0)
-                    item['precio_unitario'] = p_unit
-                    item['total_linea'] = p_unit * item['cantidad']
-                    total_general += item['total_linea']
-                    items_procesados.append(item)
-
-                # 2. Generamos el PDF
-                pdf_buffer = generar_pdf_en_memoria(items_procesados, total_general, cliente_final, fecha_header, nro_comprobante)
                 
-                # 3. Guardamos en la base de datos (Google Sheets)
-                with st.spinner('Guardando en la base de datos...'):
-                    try:
-                        numero_final_usado = int(nro_comprobante.split('-')[1])
-                    except:
-                        numero_final_usado = nro_actual
+                # --- REEMPLAZAR EL BUCLE FOR POR ESTE ---
+                for i, item in enumerate(items_extraidos):
+                    # Solo agregamos el ítem si su checkbox estaba marcado (True)
+                    if st.session_state[f"item_{i}"]:
+                        p_unit = precios_dict.get(item['descripcion'], 0)
+                        
+                        # Creamos una copia del diccionario para no arrastrar datos sucios
+                        item_final = item.copy()
+                        item_final['precio_unitario'] = p_unit
+                        item_final['total_linea'] = p_unit * item_final['cantidad']
+                        
+                        total_general += item_final['total_linea']
+                        items_procesados.append(item_final)
+
+                # --- AGREGAR ESTA VALIDACIÓN ---
+                # Validamos que haya quedado al menos un ítem después del filtrado
+                if len(items_procesados) == 0:
+                    st.error("⚠️ No has dejado ningún ítem seleccionado. Marca al menos uno para poder generar el PDF.")
+                else:
+                    # Todo lo que sigue (Generar PDF, Guardar en Sheets, Botón de descarga)
+                    # AHORA TIENE QUE IR INDENTADO (CON UNA TABULACIÓN MÁS) DENTRO DE ESTE ELSE
                     
-                    actualizar_comprobante(numero_final_usado)
-                    guardar_en_historial(nro_comprobante, fecha_header, cliente_final, total_general, items_procesados)
-                
-                # 4. Botón de descarga final
-                st.success("¡Presupuesto generado y guardado en el historial!")
-                st.header("3. Descargar Archivo")
-                
-                nombre_limpio = re.sub(r'[\\/*?:"<>|]', "", cliente_final).strip()
-                comp_limpio = re.sub(r'[\\/*?:"<>|]', "", nro_comprobante).strip()
-                nombre_archivo = f"{comp_limpio} - {nombre_limpio}.pdf"
-                
-                st.download_button(
-                    label="📥 Descargar PDF Final",
-                    data=pdf_buffer,
-                    file_name=nombre_archivo,
-                    mime="application/pdf"
-                )
-
+                    # 2. Generamos el PDF
+                    pdf_buffer = generar_pdf_en_memoria(items_procesados, total_general, cliente_final, fecha_header, nro_comprobante)
+                    
+                    # 3. Guardamos en la base de datos (Google Sheets)
+                    with st.spinner('Guardando en la base de datos...'):
+                        try:
+                            numero_final_usado = int(nro_comprobante.split('-')[1])
+                        except:
+                            numero_final_usado = nro_actual
+                        
+                        actualizar_comprobante(numero_final_usado)
+                        guardar_en_historial(nro_comprobante, fecha_header, cliente_final, total_general, items_procesados)
+                    
+                    # 4. Botón de descarga final
+                    st.success("¡Presupuesto generado y guardado en el historial!")
+                    st.header("3. Descargar Archivo")
+                    
+                    nombre_limpio = re.sub(r'[\\/*?:"<>|]', "", cliente_final).strip()
+                    comp_limpio = re.sub(r'[\\/*?:"<>|]', "", nro_comprobante).strip()
+                    nombre_archivo = f"{comp_limpio} - {nombre_limpio}.pdf"
+                    
+                    st.download_button(
+                        label="📥 Descargar PDF Final",
+                        data=pdf_buffer,
+                        file_name=nombre_archivo,
+                        mime="application/pdf"
+                    )
 # ==========================================
 # PESTAÑA 2: HISTORIAL Y DESCARGAS
 # ==========================================
