@@ -10,6 +10,25 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from datetime import datetime
+from pypdf import PdfWriter, PdfReader
+
+def fusionar_pdfs(pdf_generado, pdf_externo):
+    writer = PdfWriter()
+    
+    # Agregar el PDF generado por nosotros
+    reader1 = PdfReader(pdf_generado)
+    for page in reader1.pages:
+        writer.add_page(page)
+        
+    # Agregar el PDF externo
+    reader2 = PdfReader(pdf_externo)
+    for page in reader2.pages:
+        writer.add_page(page)
+        
+    buffer_final = io.BytesIO()
+    writer.write(buffer_final)
+    buffer_final.seek(0)
+    return buffer_final
 
 # --- FUNCIONES AUXILIARES ---
 def num_a_letras(n):
@@ -305,6 +324,10 @@ with tab1:
                     precios_dict[desc] = col_b.number_input(f"Precio", key=desc, min_value=0.0, step=1000.0, format="%.2f", label_visibility="collapsed")
                 
                 st.write("---")
+                st.write("**Adjuntar PDF externo (opcional):**")
+                pdf_externo = st.file_uploader("Subir PDF para anexar al final", type="pdf", key="pdf_anexo")
+                
+                st.write("---")
                 submitted = st.form_submit_button("Confirmar Valores y Generar PDF", type="primary")
 
             if submitted:
@@ -331,13 +354,19 @@ with tab1:
                 if len(items_procesados) == 0:
                     st.error("⚠️ No has dejado ningún ítem seleccionado. Marca al menos uno para poder generar el PDF.")
                 else:
-                    # Todo lo que sigue (Generar PDF, Guardar en Sheets, Botón de descarga)
-                    # AHORA TIENE QUE IR INDENTADO (CON UNA TABULACIÓN MÁS) DENTRO DE ESTE ELSE
-                    
-                    # 2. Generamos el PDF
+                    nombre_limpio = re.sub(r'[\\/*?:"<>|]', "", cliente_final).strip()
+                    comp_limpio = re.sub(r'[\\/*?:"<>|]', "", nro_comprobante).strip()
+                    nombre_archivo = f"{comp_limpio} - {nombre_limpio}.pdf"
+
+                    # 2. Generamos el PDF base
                     pdf_buffer = generar_pdf_en_memoria(items_procesados, total_general, cliente_final, fecha_header, nro_comprobante)
                     
-                    # 3. Guardamos en la base de datos (Google Sheets)
+                    # 3. Lógica de fusión (si subieron PDF externo)
+                    archivo_final = pdf_buffer
+                    if pdf_externo is not None:
+                        archivo_final = fusionar_pdfs(pdf_buffer, pdf_externo)
+                    
+                    # 4. Guardamos en la base de datos (Google Sheets)
                     with st.spinner('Guardando en la base de datos...'):
                         try:
                             numero_final_usado = int(nro_comprobante.split('-')[1])
@@ -347,21 +376,16 @@ with tab1:
                         actualizar_comprobante(numero_final_usado)
                         guardar_en_historial(nro_comprobante, fecha_header, cliente_final, total_general, items_procesados)
                     
-                    # 4. Botón de descarga final
-                    st.success("¡Presupuesto generado y guardado en el historial!")
+                    # 5. Botón de descarga final
+                    st.success("¡Presupuesto generado y guardado!")
                     st.header("3. Descargar Archivo")
-                    
-                    nombre_limpio = re.sub(r'[\\/*?:"<>|]', "", cliente_final).strip()
-                    comp_limpio = re.sub(r'[\\/*?:"<>|]', "", nro_comprobante).strip()
-                    nombre_archivo = f"{comp_limpio} - {nombre_limpio}.pdf"
                     
                     st.download_button(
                         label="📥 Descargar PDF Final",
-                        data=pdf_buffer,
+                        data=archivo_final,
                         file_name=nombre_archivo,
                         mime="application/pdf"
-                    )
-# ==========================================
+                    )# ==========================================
 # PESTAÑA 2: HISTORIAL Y DESCARGAS
 # ==========================================
 with tab2:
