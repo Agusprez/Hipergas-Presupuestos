@@ -3,3 +3,4 @@ pdfplumber
 reportlab
 gspread
 google-auth
+pypdf
